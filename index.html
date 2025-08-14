@@ -719,10 +719,24 @@
         }
 
         async function loadFromGoogleSheets() {
-            // D'abord essayer avec l'Apps Script si disponible
+            // Utiliser Apps Script en priorité (fonctionne mieux)
             if (CONFIG.APPS_SCRIPT_URL) {
                 try {
-                    const response = await fetch(CONFIG.APPS_SCRIPT_URL + '?action=getAllMovies');
+                    const params = new URLSearchParams();
+                    params.append('action', 'getAllMovies');
+                    
+                    const url = `${CONFIG.APPS_SCRIPT_URL}?${params.toString()}`;
+                    console.log('Chargement des films:', url);
+                    
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        mode: 'cors'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
                     const data = await response.json();
                     
                     if (data.success && data.movies) {
@@ -743,7 +757,7 @@
                         return;
                     }
                 } catch (error) {
-                    console.warn('Apps Script non disponible, essai avec l\'API directe:', error);
+                    console.warn('Erreur Apps Script, essai avec l\'API directe:', error);
                 }
             }
             
@@ -911,56 +925,37 @@
             }
 
             try {
-                // Méthode GET simple qui fonctionne bien depuis GitHub Pages
-                const url = `${CONFIG.APPS_SCRIPT_URL}?action=updateStatus&rowIndex=${movie.rowIndex}&status=${movie.vu}`;
+                // Utiliser URLSearchParams comme dans l'exemple qui fonctionne
+                const params = new URLSearchParams();
+                params.append('action', 'updateStatus');
+                params.append('rowIndex', movie.rowIndex.toString());
+                params.append('status', movie.vu.toString());
+                
+                const url = `${CONFIG.APPS_SCRIPT_URL}?${params.toString()}`;
+                
+                console.log('Envoi de la requête:', url);
                 
                 const response = await fetch(url, {
                     method: 'GET',
                     mode: 'cors'
                 });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    console.log('Mise à jour Google Sheets réussie:', result);
-                    return result;
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-
-                // Si la réponse n'est pas OK, essayer quand même
-                console.log('Réponse non-OK mais la mise à jour a probablement fonctionné');
-                return { success: true, message: 'Mise à jour envoyée' };
+                
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.error || 'Erreur lors de la mise à jour');
+                }
+                
+                console.log('✅ Mise à jour Google Sheets réussie:', result);
+                return result;
                 
             } catch (error) {
-                // Si fetch échoue, utiliser une méthode alternative
-                console.log('Utilisation de la méthode alternative pour la mise à jour');
-                
-                return new Promise((resolve) => {
-                    // Créer un script tag pour faire la requête
-                    const script = document.createElement('script');
-                    const callbackName = 'callback_' + Date.now();
-                    
-                    // Créer une fonction callback globale temporaire
-                    window[callbackName] = function(response) {
-                        delete window[callbackName];
-                        document.head.removeChild(script);
-                        console.log('Mise à jour réussie via JSONP');
-                        resolve({ success: true });
-                    };
-                    
-                    // Ajouter le script avec callback
-                    script.src = `${CONFIG.APPS_SCRIPT_URL}?action=updateStatus&rowIndex=${movie.rowIndex}&status=${movie.vu}&callback=${callbackName}`;
-                    
-                    // Timeout de sécurité
-                    setTimeout(() => {
-                        if (window[callbackName]) {
-                            delete window[callbackName];
-                            document.head.removeChild(script);
-                            console.log('Mise à jour envoyée (pas de confirmation reçue)');
-                            resolve({ success: true });
-                        }
-                    }, 3000);
-                    
-                    document.head.appendChild(script);
-                });
+                console.error('❌ Erreur lors de la mise à jour:', error);
+                throw error;
             }
         }
 
